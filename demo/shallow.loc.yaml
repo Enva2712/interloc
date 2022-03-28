@@ -1,0 +1,7 @@
+---
+Structure:
+  api:
+    Structure:
+      users:
+        Structure:
+          GET: Tip

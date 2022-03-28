@@ -1,0 +1,16 @@
+---
+Structural:
+  - Product
+  - api:
+      Structural:
+        - Product
+        - users:
+            Structural:
+              - Product
+              - GET:
+                  Structural:
+                    - Product
+                    - id:
+                        Nominal: string
+                      name:
+                        Nominal: string

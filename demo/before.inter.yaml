@@ -1,0 +1,35 @@
+---
+Structural:
+  - Product
+  - api:
+      Structural:
+        - Product
+        - users:
+            Structural:
+              - Product
+              - GET:
+                  Structural:
+                    - Product
+                    - id:
+                        Nominal: number
+                      name:
+                        Nominal: string
+                      someLegacyField:
+                        Nominal: arbitrary
+
+
+
+# the goal is to get here at some point (still needs some cleanup)
+# root: api
+# interface:
+#   api:
+#     users:
+#       GET:
+#         $ref: User
+#   User:
+#     id: number
+#     name: string
+#     joinedAt:
+#       $either:
+#         - string
+#         - number
