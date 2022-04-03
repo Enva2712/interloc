@@ -1,7 +1,7 @@
 ---
-Structure:
+Branch:
   api:
-    Structure:
+    Branch:
       users:
-        Structure:
+        Branch:
           GET: Tip

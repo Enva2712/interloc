@@ -28,10 +28,16 @@ fn main() -> Result<(), failure::Error> {
     let from_interface: Inter = from_reader(File::open(args.from)?)?;
     let to_interface: Inter = from_reader(File::open(args.to)?)?;
 
-    let mut loc = Loc::new();
-    for loc_file in args.locs {
-        loc.consume(from_reader(File::open(loc_file)?)?);
-    }
+    let loc = match args.locs.len() {
+        0 => Loc::Tip,
+        _ => {
+            let mut combined = Loc::Empty;
+            for loc_file in args.locs {
+                combined.consume(from_reader(File::open(loc_file)?)?);
+            }
+            combined
+        }
+    };
 
     let from_interface = match loc.select_subset(&from_interface) {
         Some(i) => i,

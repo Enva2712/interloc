@@ -1,21 +1,17 @@
 ---
-Structural:
-  - Product
-  - api:
-      Structural:
-        - Product
-        - users:
-            Structural:
-              - Product
-              - GET:
-                  Structural:
-                    - Product
-                    - id:
-                        Nominal: number
-                      name:
-                        Nominal: string
-                      someLegacyField:
-                        Nominal: arbitrary
+Product:
+  api:
+    Product:
+      users:
+        Product:
+          GET:
+            Product:
+              id:
+                Nominal: number
+              name:
+                Nominal: string
+              someLegacyField:
+                Nominal: arbitrary
 
 
 

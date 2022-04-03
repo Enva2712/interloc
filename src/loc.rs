@@ -8,8 +8,8 @@ use std::collections::HashMap;
 pub enum Loc {
     /// tip represents traversing all subsets of an interface
     Tip,
-    /// structure enumerates specific subsets of the interface
-    Structure(HashMap<String, Loc>),
+    /// branch enumerates named subsets of the interface
+    Branch(HashMap<String, Loc>),
     /// empty represents that we don't traverse this interface
     Empty,
 }
@@ -23,11 +23,11 @@ impl Loc {
         match self {
             // with is <= self. noop
             Self::Tip => (),
-            Self::Structure(self_next) => match with {
+            Self::Branch(self_next) => match with {
                 // with is > self. use it instead
                 Self::Tip => *self = with,
                 // possibly disjoint, so we need to merge
-                Self::Structure(with_next) => {
+                Self::Branch(with_next) => {
                     for (key, with_val) in with_next {
                         if let Some(self_val) = self_next.get_mut(&key) {
                             self_val.consume(with_val);
@@ -48,26 +48,36 @@ impl Loc {
     pub fn select_subset(&self, base: &Inter) -> Option<Inter> {
         match self {
             Self::Tip => Some(base.clone()),
-            Self::Structure(self_succ) => match base {
+            Self::Branch(self_succ) => match base {
+                // the loc diverges
                 Inter::Nominal(_) => None,
-                Inter::Structural(comp, base_succ) => {
+                Inter::Product(base_succ) => {
                     let mut succ = HashMap::new();
                     for (key, next_loc) in self_succ {
-                        // loc may diverge from interface. return None if it does
+                        // loc may diverge from interface here or deeper into this branch.
+                        // propogate None either way
                         let next_base = base_succ.get(key)?;
-
-                        // this needs fixed. if a subset at this key diverges, we should return
-                        // None from the entire func, but if we just reach an Empty loc, we should
-                        // ignore the key. will either need to change return type or how Empty is
-                        // handled (e.g. return an empty interface of some sort)
-                        if let Some(subset) = next_loc.select_subset(next_base) {
-                            succ.insert(key.clone(), subset);
-                        }
+                        let subset = next_loc.select_subset(next_base)?;
+                        succ.insert(key.clone(), subset);
                     }
-                    Some(Inter::Structural(comp.clone(), succ))
+                    Some(Inter::Product(succ))
                 }
+                // this is the only place we need to match against sum. empty doesn't go deeper,
+                // and tip does, but traverses all paths anyway
+                Inter::Sum(base_succ) => {
+                    let mut succ = Vec::new();
+                    // TODO: think about better ways to represent sum traversal in Loc type
+                    for member in base_succ {
+                        if let Some(s) = Self::select_subset(&self, member) {
+                            succ.push(s);
+                        };
+                    }
+                    Some(Inter::Sum(succ))
+                }
+                // the loc diverges
+                Inter::Never => None,
             },
-            Self::Empty => None,
+            Self::Empty => Some(Inter::Never),
         }
     }
 }

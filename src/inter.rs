@@ -3,19 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
+// TODO: ideally there would be some way to define assignability rules, but this makes no effort to
+// support that
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Inter {
-    // maybe structural would be better split into Sum and Product variants here rather than
-    // storing the composition. that would allow sum types to have unnamed variants and be
-    // transparent to traversal
-    Structural(Composition, HashMap<String, Inter>),
+    /// A product type containing named members
+    Product(HashMap<String, Inter>),
+    /// A sum type containing a list of variants
+    Sum(Vec<Inter>),
+    /// A nominal type representing a named primitive
     Nominal(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Composition {
-    Sum,
-    Product,
+    /// The bottom type
+    Never,
 }
 
 impl PartialOrd for Inter {
@@ -48,6 +47,9 @@ impl Inter {
         &'a self,
         peer: &'a Self,
     ) -> impl Iterator<Item = Incompatibility> + 'a {
+        // this struct may need an additional vecdeq for buffering incompatibilities when a single
+        // node would produce multiple. this would simplify the Product and Sum branches below, and
+        // let us remove the option wrapper in to_check
         struct IncompatibilityStream<'a> {
             to_check: VecDeque<(String, &'a Inter, Option<&'a Inter>)>,
         }
@@ -57,38 +59,51 @@ impl Inter {
             fn next(&mut self) -> Option<Incompatibility> {
                 while let Some((path, node, possible_peer)) = self.to_check.pop_front() {
                     if let Some(peer) = possible_peer {
-                        match node {
-                            Inter::Nominal(node_type) => match peer {
-                                Inter::Nominal(peer_type) => {
+                        match peer {
+                            Inter::Nominal(peer_type) => match node {
+                                Inter::Nominal(node_type) => {
                                     if node_type != peer_type {
                                         return Some(Incompatibility::MismatchedName(path));
                                     }
                                 }
-                                Inter::Structural(_, _) => {
-                                    return Some(Incompatibility::ContainerDiverges(path))
-                                }
+                                _ => return Some(Incompatibility::ContainerDiverges(path)),
                             },
-                            Inter::Structural(node_comp, node_suc) => match peer {
-                                Inter::Nominal(_) => {
-                                    return Some(Incompatibility::ContainedDiverges(path))
-                                }
-                                Inter::Structural(peer_comp, peer_suc) => {
-                                    // if they're both structural nodes, first push all the next
-                                    // nodes
-                                    for (key, node_val) in node_suc {
+                            Inter::Product(peer_succ) => match node {
+                                Inter::Product(node_succ) => {
+                                    // if they're both structural nodes, push all the next nodes
+                                    for (key, node_val) in node_succ {
                                         let next_path = path.clone() + "." + key;
                                         self.to_check.push_back((
                                             next_path,
                                             node_val,
-                                            peer_suc.get(key),
+                                            peer_succ.get(key),
                                         ));
                                     }
-                                    // then verify they compose in the same way
-                                    if node_comp != peer_comp {
-                                        return Some(Incompatibility::MismatchedComposition(path));
+                                }
+                                _ => return Some(Incompatibility::ContainedDiverges(path)),
+                            },
+                            Inter::Sum(peer_succ) => match node {
+                                Inter::Sum(node_succ) => {
+                                    for s in node_succ {
+                                        self.to_check.push_back((path.clone(), s, Some(peer)))
+                                    }
+                                }
+                                _ => {
+                                    let mut compatible = false;
+                                    for s in peer_succ {
+                                        // TODO: forward incompatibilities back up
+                                        if node.contained_by(s) {
+                                            compatible = true;
+                                            break;
+                                        }
+                                    }
+                                    if !compatible {
+                                        return Some(Incompatibility::ContainerDiverges(path));
                                     }
                                 }
                             },
+                            // FIXME
+                            Inter::Never => {}
                         }
                     } else {
                         return Some(Incompatibility::ContainedDiverges(path));
@@ -109,9 +124,9 @@ impl Inter {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Incompatibility {
     MismatchedName(String),
+    // TODO: these two don't really make sense. clean up the variants
     ContainerDiverges(String),
     ContainedDiverges(String),
-    MismatchedComposition(String),
 }
 
 impl Display for Incompatibility {
@@ -125,9 +140,6 @@ impl Display for Incompatibility {
             ),
             Incompatibility::ContainedDiverges(path) => {
                 write!(f, "The new interface diverges from the old one at {}", path)
-            }
-            Incompatibility::MismatchedComposition(path) => {
-                write!(f, "Composition mismatch at path {}", path)
             }
         }
     }
@@ -148,17 +160,14 @@ mod tests {
 
     #[test]
     fn subset() {
-        let a = Inter::Structural(
-            Composition::Product,
-            HashMap::from([("key1".into(), Inter::Nominal("my-type".into()))]),
-        );
-        let b = Inter::Structural(
-            Composition::Product,
-            HashMap::from([
-                ("key1".into(), Inter::Nominal("my-type".into())),
-                ("key2".into(), Inter::Nominal("my-type".into())),
-            ]),
-        );
+        let a = Inter::Product(HashMap::from([(
+            "key1".into(),
+            Inter::Nominal("my-type".into()),
+        )]));
+        let b = Inter::Product(HashMap::from([
+            ("key1".into(), Inter::Nominal("my-type".into())),
+            ("key2".into(), Inter::Nominal("my-type".into())),
+        ]));
         assert!(a.contained_by(&b));
 
         assert_eq!(
